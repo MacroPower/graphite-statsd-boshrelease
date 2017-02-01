@@ -1,0 +1,113 @@
+# This YML file should work with microbosh or mutli-vm bosh. Tested with PCF 1.7.
+
+<%
+  # Update these properties as required
+  deployment_name  = 'graphite-microbosh'
+  director_uuid    = 'bf3dbdbd-50df-4588-8056-b57889d5ddca'
+  stemcell_name    = 'bosh-vsphere-esxi-ubuntu-trusty-go_agent'
+  stemcell_version = 'latest'
+  network_name     = 'NET-01'
+  vs_network_name  = 'bosh-network'
+  cidr             = '10.0.0.0/16'
+  res_net_range    = '10.0.1.0-10.0.1.254'
+  static_ip        = '10.0.0.2'
+  gateway_ip       = '10.0.0.1'
+  av_zone          = 'AZ'
+%>
+
+name: <%= deployment_name %>
+director_uuid: <%= director_uuid %>
+
+releases:
+- name: graphite
+  version: latest
+
+jobs:
+- name: graphite
+  templates:
+  - name: carbon
+    release: graphite
+  - name: graphite-web
+    release: graphite
+  - name: statsd
+    release: graphite
+  instances: 1
+  resource_pool: small_z1
+  persistent_disk: 2048
+  networks:
+  - name: <%= network_name %>
+    static_ips:
+    - <%= static_ip %>
+
+properties:
+  carbon:
+    storage_schemas:
+      - name: "my_storage_schema"
+        pattern: "^my\\.metrics\\.*" # NB: Note the double escapes - this will evaluate to "^my\.metrics\.*"
+        retentions: "60s:1d"
+      - name: "my_storage_schema_2"
+        pattern: "metrics$"
+        retentions: "15s:7d,1m:21d,15m:5y"
+    storage_aggregations:
+      - name: "my_storage_aggregation"
+        pattern: "^my\\.metrics\\.*" # NB: Note the double escapes - this will evaluate to "^my\.metrics\.*"
+        xFilesFactor: "0.5"
+        aggregationMethod: "average"
+      - name: "my_storage_aggregation_2"
+        pattern: "metrics$"
+        xFilesFactor: "0.1"
+        aggregationMethod: "max"
+  graphite-web:
+    time_zone: UTC
+    httpd:
+      port: 80
+    wsgi:
+      inactivity-timeout: 60
+
+meta:
+  environment: graphite
+  stemcell:
+    name: <%= stemcell_name %>
+    version: latest
+
+resource_pools:
+- cloud_properties:
+    name: <%= av_zone %>
+    ram: 4_096
+    cpu: 1
+    disk: 10_000
+  name: small_z1
+  network: <%= network_name %>
+  size: 1
+  stemcell:
+    name: <%= stemcell_name %>
+    version: latest
+
+compilation:
+  cloud_properties:
+    name: random
+    ram: 4_096
+    disk: 5_000
+    cpu: 2
+  network: <%= network_name %>
+  reuse_compilation_vms: false
+  workers: 1
+
+update:
+  canaries: 1
+  canary_watch_time: 1000-30000
+  max_in_flight: 50
+  serial: false
+  update_watch_time: 1000-30000
+
+networks:
+- name: <%= network_name %>
+  subnets:
+  - cloud_properties:
+      name: <%= vs_network_name %>
+    range: <%= cidr %>
+    reserved:
+    - <%= res_net_range %>
+    static:
+    - <%= static_ip %>
+    gateway: <%= gateway_ip %>
